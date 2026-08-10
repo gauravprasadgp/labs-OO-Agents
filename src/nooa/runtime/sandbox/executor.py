@@ -409,9 +409,16 @@ class SandboxedExecutor:
     def _classify_worker_death(self, exc: WorkerDiedError) -> Exception:
         proc = self._proc
         code = getattr(proc, "exitcode", None)
-        if code == -signal.SIGXCPU:
+        # SIGXCPU and SIGKILL are POSIX-only. Reading them unguarded raises
+        # AttributeError on Windows, which would replace the real worker-death
+        # error with a spurious one at exactly the moment the caller needs to
+        # see what actually went wrong. Absent signal => that death cause is not
+        # possible on this host, so the classification simply does not apply.
+        sigxcpu = getattr(signal, "SIGXCPU", None)
+        sigkill = getattr(signal, "SIGKILL", None)
+        if sigxcpu is not None and code == -sigxcpu:
             return CellTimeoutError("cell exceeded its CPU-time limit and was killed")
-        if code == -signal.SIGKILL:
+        if sigkill is not None and code == -sigkill:
             return CellMemoryError(
                 "worker was killed (out-of-memory or resource limit). "
                 "Reduce the cell's memory use or raise max_memory_mb."

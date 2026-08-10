@@ -27,6 +27,15 @@ from dataclasses import dataclass
 
 from nooa.runtime.sandbox.config import LandlockRule, ResolvedSpec
 
+# POSIX-only, and absent on Windows. Imported here rather than inside the
+# functions below so that a missing `resource` degrades into "rlimits are not
+# enforceable on this host" — which is what the module contract above promises —
+# instead of an ImportError raised from probe_capabilities() at first use.
+try:
+    import resource
+except ImportError:  # pragma: no cover - only reachable on non-POSIX hosts
+    resource = None  # type: ignore[assignment]
+
 # --- syscall numbers (Linux) ------------------------------------------------
 # Landlock syscall numbers are identical across x86_64 and aarch64.
 _NR_LANDLOCK_CREATE_RULESET = 444
@@ -178,14 +187,16 @@ class Capabilities:
 
 def probe_capabilities() -> Capabilities:
     """Probe the host once for every enforcement mechanism the sandbox uses."""
-    import resource
-
     is_linux = platform.system() == "Linux"
     return Capabilities(
         linux=is_linux,
         landlock_abi=landlock_abi() if is_linux else 0,
         seccomp=seccomp_supported() if is_linux else False,
-        rlimit=hasattr(resource, "RLIMIT_AS") and hasattr(resource, "RLIMIT_CPU"),
+        rlimit=(
+            resource is not None
+            and hasattr(resource, "RLIMIT_AS")
+            and hasattr(resource, "RLIMIT_CPU")
+        ),
     )
 
 
@@ -212,7 +223,14 @@ def apply_rlimits(*, max_memory_mb: int = 0, max_cpu_seconds: int = 0) -> None:
     so an absolute cap below that baseline would break it instantly. The cap is
     ``current VmSize + max_memory_mb`` — i.e. how much more the cell may allocate.
     """
-    import resource
+    if resource is None:  # pragma: no cover - only reachable on non-POSIX hosts
+        # Unreachable in practice: install_guards() runs post-fork, and the
+        # executor refuses to start at all unless caps.rlimit is True. Raise
+        # rather than no-op anyway — silently skipping a containment guard the
+        # caller asked for would hand back an unenforced sandbox.
+        raise RuntimeError(
+            "rlimits require the POSIX 'resource' module, which is unavailable on this host"
+        )
 
     if max_memory_mb and max_memory_mb > 0:
         baseline = _self_vmsize_bytes()
