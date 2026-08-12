@@ -12,8 +12,8 @@ Configured purely from the environment (see repo-root ``.env``)::
     MEM_EMBED_API_KEY=...
     MEM_EMBED_DIMS=1024
 
-Follows ``examples/memory_bench/llm.py``; falls back to ``FakeLLMClient`` /
-hashing embeddings when credentials are absent so smoke tests run offline.
+Falls back to ``FakeLLMClient`` / hashing embeddings when credentials are absent
+so smoke tests run offline.
 """
 
 from __future__ import annotations

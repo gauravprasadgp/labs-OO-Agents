@@ -5,8 +5,12 @@ Agents. Toggle it on per agent; it changes no core framework code. Its defining
 idea: **the agent authors and curates its own memories** through native tools —
 rather than a harness extracting them behind the agent's back.
 
-- Runnable demos + measured results: [`examples/memory_bench/`](../../../examples/memory_bench/)
-  and the quickstart [`examples/quickstart/12_memory.py`](../../../examples/quickstart/12_memory.py).
+- Runnable demos: the quickstart
+  [`examples/quickstart/12_memory.py`](../../../../examples/quickstart/12_memory.py)
+  and [`examples/advanced/memory.py`](../../../../examples/advanced/memory.py).
+- Measured results: see [When does memory help?](#when-does-memory-help). The
+  benchmark harness that produced those numbers is not published in this
+  repository.
 
 ---
 
@@ -300,8 +304,9 @@ def my_llm_reconciler(cluster):                 # list[Memory] (old->new) -> (cu
     ...
 ```
 
-See `examples/memory_bench/reflecting.py` (`make_llm_reasoner`) and `longmemeval.py`
-(`make_llm_reconciler`) for working implementations.
+Working implementations of `make_llm_reasoner` and `make_llm_reconciler` live in
+the benchmark harness (`reflecting.py` and `longmemeval.py`), which is not
+published in this repository.
 
 **When does reflection help?** Empirically (real gpt-5.4):
 
@@ -397,8 +402,10 @@ agent.event_manager.on("MemoryWritten", lambda e: print("wrote", e.memory_id, e.
 
 ## When does memory help?
 
-Measured with real gpt-5.4 + text-embedding-3-large (see
-[`examples/memory_bench/`](../../../examples/memory_bench/)):
+Measured with real gpt-5.4 + text-embedding-3-large. The demo names below are
+files in the benchmark harness that produced these numbers; that harness is not
+published in this repository, so the results are not reproducible from this repo
+alone:
 
 | demo | what it isolates | result |
 |---|---|---|
@@ -446,5 +453,7 @@ Tests: [`tests/memory/`](../../tests/memory/).
 - `numpy`/`sqlite-vec` backends are exact/brute-force — fine to ~10⁵ vectors; beyond
   that prefer a Chroma backend.
 
-See [`examples/memory_bench/`](../../../examples/memory_bench/) for runnable
-benchmarks and measured behavior.
+See [`examples/quickstart/12_memory.py`](../../../../examples/quickstart/12_memory.py)
+and [`examples/advanced/memory.py`](../../../../examples/advanced/memory.py) for
+runnable code, and [When does memory help?](#when-does-memory-help) for the
+measured behavior.
