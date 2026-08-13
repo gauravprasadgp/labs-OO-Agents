@@ -12,6 +12,7 @@ import pytest
 from nooa.unifiedllm import (
     MODELS,
     CompletionClient,
+    ResponsesClient,
     RetryConfig,
     ensure_loaded,
     get_llm_client,
@@ -306,6 +307,75 @@ class TestGetLlmClient:
         llm = get_llm_client("auto-loaded")
         assert llm.model == "auto/loaded"
         assert "auto-loaded" in MODELS
+
+
+class TestClientTypeSelection:
+    """``client_type`` picks the transport, and rejects anything it can't honour.
+
+    Selection used to be ``"responses" if client_type == "responses" else
+    completion``, so every unrecognised value — including a capitalised
+    ``"Responses"`` — silently produced a CompletionClient. A caller who
+    explicitly asked for the Responses transport got the other one, and only
+    found out later via a provider-side error about tools or reasoning.
+    """
+
+    def test_responses_selects_responses_client(self):
+        assert isinstance(get_llm_client("gpt-4o", client_type="responses"), ResponsesClient)
+
+    def test_completion_selects_completion_client(self):
+        assert isinstance(get_llm_client("gpt-4o", client_type="completion"), CompletionClient)
+
+    def test_default_is_completion(self):
+        assert isinstance(get_llm_client("gpt-4o"), CompletionClient)
+
+    @pytest.mark.parametrize("value", ["Responses", "RESPONSES", "response", "respones", "bogus"])
+    def test_unrecognised_value_raises_instead_of_downgrading(self, value):
+        """The bug: each of these used to yield a CompletionClient, silently."""
+        with pytest.raises(ValueError, match="Unknown client_type"):
+            get_llm_client("gpt-4o", client_type=value)
+
+    def test_error_names_the_argument_as_the_source(self):
+        with pytest.raises(ValueError, match="from the client_type argument"):
+            get_llm_client("gpt-4o", client_type="Responses")
+
+    def test_registry_alias_can_select_responses(self, tmp_path):
+        path = _write_project_config(
+            _project_dir(tmp_path),
+            """\
+            models:
+              gpt5-responses:
+                model_name: openai/gpt-5.6
+                client_type: responses
+            """,
+        )
+        reload_registry(path)
+        assert isinstance(get_llm_client("gpt5-responses"), ResponsesClient)
+
+    def test_registry_alias_typo_raises_and_names_the_alias(self, tmp_path):
+        """A typo in YAML must blame the alias, not the caller who never passed one."""
+        path = _write_project_config(
+            _project_dir(tmp_path),
+            """\
+            models:
+              typo-alias:
+                model_name: openai/gpt-5.6
+                client_type: Responses
+            """,
+        )
+        reload_registry(path)
+        with pytest.raises(ValueError, match="from registry alias 'typo-alias'"):
+            get_llm_client("typo-alias")
+
+    def test_explicit_argument_overrides_a_broken_alias(self):
+        """The documented precedence still holds — the argument wins outright."""
+        MODELS["typo-alias"] = {"model_name": "openai/gpt-5.6", "client_type": "Responses"}
+        assert isinstance(get_llm_client("typo-alias", client_type="responses"), ResponsesClient)
+
+    def test_non_string_yaml_value_raises_rather_than_crashing(self):
+        """A list/dict in YAML is unhashable; membership testing it would TypeError."""
+        MODELS["list-alias"] = {"model_name": "openai/gpt-5.6", "client_type": ["responses"]}
+        with pytest.raises(ValueError, match="Unknown client_type"):
+            get_llm_client("list-alias")
 
 
 class TestApiKeyHandling:

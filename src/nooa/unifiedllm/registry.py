@@ -59,6 +59,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Valid values for ``client_type`` (the explicit argument to get_llm_client and
+# the registry-YAML field of the same name). Kept as names rather than classes
+# because the client classes are imported lazily inside get_llm_client.
+_CLIENT_TYPES = frozenset({"completion", "responses"})
+
 # Serializes the (_loaded, MODELS) check-and-mutate so concurrent
 # ensure_loaded() / reload_registry() calls — possible when async agent
 # tool calls fire in parallel before bootstrap finishes — cannot
@@ -319,6 +324,11 @@ def get_llm_client(name: str, *, client_type: str | None = None, **overrides) ->
     Returns:
         Configured UnifiedLLM instance (CompletionClient or ResponsesClient).
 
+    Raises:
+        ValueError: if ``client_type`` — whether passed here or set on the
+            registry alias — is not ``"completion"`` or ``"responses"``. The
+            match is exact and case-sensitive.
+
     Example::
 
         # Pass-through to litellm (no registry entry needed)
@@ -408,8 +418,22 @@ def get_llm_client(name: str, *, client_type: str | None = None, **overrides) ->
 
     params.update(overrides)
 
-    # Select client class: explicit param > YAML config > default
+    # Select client class: explicit param > YAML config > default.
+    #
+    # Validated rather than compared against "responses" alone: that test sends
+    # every other value — including "Responses", "response", and outright typos —
+    # down the CompletionClient branch, silently ignoring a transport the caller
+    # explicitly asked for. The resulting failure surfaces much later as a
+    # provider-side error about tools or reasoning, with nothing pointing back at
+    # the misspelled key.
+    from_yaml = client_type is None and "client_type" in config
     client_type = client_type or config.get("client_type", "completion")
+    if not isinstance(client_type, str) or client_type not in _CLIENT_TYPES:
+        source = f"registry alias {name!r}" if from_yaml else "the client_type argument"
+        raise ValueError(
+            f"Unknown client_type {client_type!r} from {source}. "
+            f"Expected one of: {', '.join(sorted(_CLIENT_TYPES))}."
+        )
     client = ResponsesClient(**params) if client_type == "responses" else CompletionClient(**params)
     client._registry_config = config  # For context_window lookup
     return client
